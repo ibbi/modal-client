@@ -78,6 +78,25 @@ class _PartialFunction:
             keep_warm=self.keep_warm,
         )
 
+    def __call__(self, *args, **kwargs):
+        """
+        Enable the _PartialFunction instance to be called as a function.
+
+        This method allows the decorator to be used without parentheses,
+        treating the first argument as the function to be decorated and
+        delegating the call to the wrapped function.
+
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            The result of the function call.
+        """
+        if not callable(self.raw_f):
+            raise TypeError(f"The function {self.raw_f.__name__} is not callable.")
+        return self.raw_f(*args, **kwargs)
+
 
 PartialFunction = synchronize_api(_PartialFunction)
 
@@ -450,29 +469,29 @@ def _build(
 
 
 def _enter(
-    _warn_parentheses_missing=None,
+    f: Union[Callable[[Any], Any], _PartialFunction] = None,
     *,
     snap: bool = False,
-) -> Callable[[Union[Callable[[Any], Any], _PartialFunction]], _PartialFunction]:
-    """Decorator for methods which should be executed when a new container is started.
-
-    See the [lifeycle function guide](https://modal.com/docs/guide/lifecycle-functions#enter) for more information."""
-    if _warn_parentheses_missing:
+) -> _PartialFunction:
+    if f is not None and callable(f):
+        # If the decorator is used without parentheses and the first argument is a function,
+        # treat it as the `raw_f` argument to create a new `_PartialFunction` instance.
+        if snap:
+            flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT
+        else:
+            flag = _PartialFunctionFlags.ENTER_POST_CHECKPOINT
+        return _PartialFunction(f, flag)
+    elif f is not None:
         raise InvalidError("Positional arguments are not allowed. Did you forget parentheses? Suggestion: `@enter()`.")
 
-    if snap:
-        flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT
-    else:
-        flag = _PartialFunctionFlags.ENTER_POST_CHECKPOINT
-
-    def wrapper(f: Union[Callable[[Any], Any], _PartialFunction]) -> _PartialFunction:
-        if isinstance(f, _PartialFunction):
-            _disallow_wrapping_method(f, "enter")
-            return f.add_flags(flag)
+    def inner_wrapper(f: Callable[[Any], Any]) -> _PartialFunction:
+        if snap:
+            flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT
         else:
-            return _PartialFunction(f, flag)
+            flag = _PartialFunctionFlags.ENTER_POST_CHECKPOINT
+        return _PartialFunction(f, flag)
 
-    return wrapper
+    return inner_wrapper
 
 
 ExitHandlerType = Union[

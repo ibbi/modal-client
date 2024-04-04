@@ -1262,16 +1262,20 @@ async def servicer_factory(blob_server):
             server = grpclib.server.Server([servicer])
             await server.start(host=host, port=port, path=path)
             logging.info("Servicer started and listening.")
+            logging.info(f"Event loop running: {asyncio.get_running_loop().is_running()}")
+            logging.info(f"Active tasks at start: {[task.get_name() for task in asyncio.all_tasks()]}")
 
         async def _stop_servicer():
             logging.info("Stopping servicer...")
+            logging.info(f"Event loop running before stopping: {asyncio.get_running_loop().is_running()}")
             servicer.container_heartbeat_abort.set()
             # Log active tasks before cancellation
             tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
             logging.info(f"Active tasks before cancellation: {len(tasks)}")
             for task in tasks:
-                logging.info(f"Cancelling task: {task}")
-            [task.cancel() for task in tasks]
+                logging.info(f"Cancelling task: {task.get_name()}")
+                task.cancel()
+            # Await all tasks to ensure they are cancelled before closing the server
             await asyncio.gather(*tasks, return_exceptions=True)
             if server:
                 server.close()
@@ -1279,6 +1283,17 @@ async def servicer_factory(blob_server):
             # Confirm server closure
             logging.info("Server closed successfully.")
             logging.info("Servicer stopped.")
+            logging.info(f"Event loop running after stopping: {asyncio.get_running_loop().is_running()}")
+            remaining_tasks = [task for task in asyncio.all_tasks() if not task.done()]
+            if remaining_tasks:
+                logging.info(f"Remaining active tasks after stop: {[task.get_name() for task in remaining_tasks]}")
+                # Await remaining tasks to ensure they are completed or cancelled
+                await asyncio.gather(*remaining_tasks, return_exceptions=True)
+            logging.info("All tasks completed or cancelled successfully.")
+            # Ensure the synchronizer's event loop is properly closed
+            if hasattr(synchronizer, 'close'):
+                logging.info("Closing synchronizer's event loop.")
+                synchronizer.close()
 
         start_servicer = synchronize_api(_start_servicer)
         stop_servicer = synchronize_api(_stop_servicer)

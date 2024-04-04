@@ -481,14 +481,15 @@ def _enter(
     *,
     snap: bool = False,
 ) -> Union[_PartialFunction, Callable[[Callable[[Any], Any]], _PartialFunction]]:
-    if f is not None:
-        if callable(f):
-            # If the decorator is used without parentheses and the first argument is a function,
-            # treat it as the `raw_f` argument to create a new `_PartialFunction` instance.
-            flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT if snap else _PartialFunctionFlags.ENTER_POST_CHECKPOINT
-            return _PartialFunction(f, flag)
-        else:
-            raise InvalidError("The @enter decorator must be called with a function or without arguments.")
+    print(f"Debug: _enter called with f={f}, type={type(f)}")  # New print statement for debugging
+    if f is not None and callable(f):
+        # If the decorator is used without parentheses and the first argument is a function,
+        # treat it as the `raw_f` argument to create a new `_PartialFunction` instance.
+        flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT if snap else _PartialFunctionFlags.ENTER_POST_CHECKPOINT
+        return _PartialFunction(f, flag)
+    elif f is not None:
+        print("Debug: Raising InvalidError because f is not callable")  # New print statement before raising error
+        raise InvalidError("The @enter decorator must be called with a function or without arguments.")
     else:
         # If the decorator is used with parentheses, return a wrapper to be called with the function.
         def wrapper(f: Callable[[Any], Any]) -> _PartialFunction:

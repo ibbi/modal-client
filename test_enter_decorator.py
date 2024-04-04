@@ -8,6 +8,7 @@ class TestEnterDecorator(unittest.TestCase):
 
     def test_function_without_parentheses(self):
         # Test the behavior of the 'enter' decorator when it is used without parentheses
+        print("Running test_function_without_parentheses")
         @enter
         def dummy_function():
             return "Function executed"
@@ -19,6 +20,7 @@ class TestEnterDecorator(unittest.TestCase):
 
     def test_function_with_parentheses(self):
         # Test the behavior of the 'enter' decorator when it is used with parentheses
+        print("Running test_function_with_parentheses")
         @enter()
         def dummy_function():
             return "Function executed"

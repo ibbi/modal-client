@@ -1,5 +1,6 @@
-# Copyright Modal Labs 2023
 import enum
+import logging
+import sys
 from typing import (
     Any,
     Callable,
@@ -19,6 +20,13 @@ from .config import logger
 from .exception import InvalidError, deprecation_warning
 from .functions import _Function
 
+# Set up logging to standard output
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+stream_handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
 
 class _PartialFunctionFlags(enum.IntFlag):
     FUNCTION: int = 1
@@ -472,32 +480,24 @@ def _enter(
     f: Union[Callable[[Any], Any], _PartialFunction] = None,
     *,
     snap: bool = False,
-) -> _PartialFunction:
-    if f is not None and callable(f):
-        # If the decorator is used without parentheses and the first argument is a function,
-        # treat it as the `raw_f` argument to create a new `_PartialFunction` instance.
-        if snap:
-            flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT
+) -> Union[_PartialFunction, Callable[[Callable[[Any], Any]], _PartialFunction]]:
+    if f is not None:
+        if callable(f):
+            # If the decorator is used without parentheses and the first argument is a function,
+            # treat it as the `raw_f` argument to create a new `_PartialFunction` instance.
+            flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT if snap else _PartialFunctionFlags.ENTER_POST_CHECKPOINT
+            return _PartialFunction(f, flag)
         else:
-            flag = _PartialFunctionFlags.ENTER_POST_CHECKPOINT
-        return _PartialFunction(f, flag)
-    elif f is not None:
-        raise InvalidError("Positional arguments are not allowed. Did you forget parentheses? Suggestion: `@enter()`.")
-
-    def inner_wrapper(f: Callable[[Any], Any]) -> _PartialFunction:
-        if snap:
-            flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT
-        else:
-            flag = _PartialFunctionFlags.ENTER_POST_CHECKPOINT
-        return _PartialFunction(f, flag)
-
-    return inner_wrapper
-
+            raise InvalidError("The @enter decorator must be called with a function or without arguments.")
+    else:
+        # If the decorator is used with parentheses, return a wrapper to be called with the function.
+        def wrapper(f: Callable[[Any], Any]) -> _PartialFunction:
+            flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT if snap else _PartialFunctionFlags.ENTER_POST_CHECKPOINT
+            return _PartialFunction(f, flag)
+        return wrapper
 
 ExitHandlerType = Union[
-    # Original, __exit__ style method signature (now deprecated)
     Callable[[Any, Optional[Type[BaseException]], Optional[BaseException], Any], None],
-    # Forward-looking unparameterized method
     Callable[[Any], None],
 ]
 

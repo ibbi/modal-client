@@ -40,6 +40,9 @@ from modal.image import ImageBuilderVersion
 from modal.mount import client_mount_name
 from modal_proto import api_grpc, api_pb2
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 @dataclasses.dataclass
 class VolumeFile:
@@ -1255,13 +1258,27 @@ async def servicer_factory(blob_server):
 
         async def _start_servicer():
             nonlocal server
+            logging.info("Starting servicer...")
             server = grpclib.server.Server([servicer])
             await server.start(host=host, port=port, path=path)
+            logging.info("Servicer started and listening.")
 
         async def _stop_servicer():
+            logging.info("Stopping servicer...")
             servicer.container_heartbeat_abort.set()
-            server.close()
-            await server.wait_closed()
+            # Log active tasks before cancellation
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            logging.info(f"Active tasks before cancellation: {len(tasks)}")
+            for task in tasks:
+                logging.info(f"Cancelling task: {task}")
+            [task.cancel() for task in tasks]
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if server:
+                server.close()
+                await server.wait_closed()
+            # Confirm server closure
+            logging.info("Server closed successfully.")
+            logging.info("Servicer stopped.")
 
         start_servicer = synchronize_api(_start_servicer)
         stop_servicer = synchronize_api(_stop_servicer)

@@ -21,7 +21,7 @@ ignore_errors = true
 
 [tool.pytest.ini_options]
 timeout = 300
-addopts = "--ignore=modal/cli/programs"
+addopts = "--ignore=modal/cli/programs -s"
 filterwarnings = [
     "error::DeprecationWarning",
     "ignore:Type google._upb.*MapContainer uses PyType_Spec.*Python 3.14:DeprecationWarning",

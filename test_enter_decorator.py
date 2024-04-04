@@ -17,6 +17,9 @@ class TestEnterDecorator(unittest.TestCase):
         self.assertIsInstance(dummy_function, _PartialFunction)
         # Assert that the flag is set correctly
         self.assertEqual(dummy_function.flags, _PartialFunctionFlags.ENTER_POST_CHECKPOINT)
+        # Print the type and flags of the dummy_function for debugging
+        print(f"Type of dummy_function: {type(dummy_function)}")
+        print(f"Flags of dummy_function: {dummy_function.flags}")
 
     def test_function_with_parentheses(self):
         # Test the behavior of the 'enter' decorator when it is used with parentheses
@@ -29,6 +32,9 @@ class TestEnterDecorator(unittest.TestCase):
         self.assertIsInstance(dummy_function, _PartialFunction)
         # Assert that the flag is set correctly
         self.assertEqual(dummy_function.flags, _PartialFunctionFlags.ENTER_POST_CHECKPOINT)
+        # Print the type and flags of the dummy_function for debugging
+        print(f"Type of dummy_function: {type(dummy_function)}")
+        print(f"Flags of dummy_function: {dummy_function.flags}")
 
 if __name__ == "__main__":
     unittest.main()

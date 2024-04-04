@@ -9,9 +9,11 @@ class TestEnterDecorator(unittest.TestCase):
     def test_function_without_parentheses(self):
         # Test the behavior of the 'enter' decorator when it is used without parentheses
         print("Running test_function_without_parentheses")
+        print(f"Type of enter before decoration: {type(enter)}")
         @enter
         def dummy_function():
             return "Function executed"
+        print(f"Type of dummy_function after decoration: {type(dummy_function)}")
 
         # Assert that the returned object is an instance of _PartialFunction
         self.assertIsInstance(dummy_function, _PartialFunction)

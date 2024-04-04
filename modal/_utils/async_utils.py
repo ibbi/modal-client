@@ -1,4 +1,3 @@
-# Copyright Modal Labs 2022
 import asyncio
 import concurrent.futures
 import functools
@@ -11,11 +10,12 @@ from typing import Any, AsyncGenerator, Callable, Iterator, List, Optional, Set,
 
 import synchronicity
 from typing_extensions import ParamSpec
+import atexit
 
 from .logger import logger
 
 synchronizer = synchronicity.Synchronizer()
-# atexit.register(synchronizer.close)
+atexit.register(synchronizer.close)
 
 
 def synchronize_api(obj, target_module=None):
@@ -33,26 +33,6 @@ def synchronize_api(obj, target_module=None):
 
 
 def retry(direct_fn=None, *, n_attempts=3, base_delay=0, delay_factor=2, timeout=90):
-    """Decorator that calls an async function multiple times, with a given timeout.
-
-    If a `base_delay` is provided, the function is given an exponentially
-    increasing delay on each run, up until the maximum number of attempts.
-
-    Usage:
-
-    ```
-    @retry
-    async def may_fail_default():
-        # ...
-        pass
-
-    @retry(n_attempts=5, base_delay=1)
-    async def may_fail_delay():
-        # ...
-        pass
-    ```
-    """
-
     def decorator(fn):
         @functools.wraps(fn)
         async def f_wrapped(*args, **kwargs):
@@ -78,21 +58,12 @@ def retry(direct_fn=None, *, n_attempts=3, base_delay=0, delay_factor=2, timeout
         return f_wrapped
 
     if direct_fn is not None:
-        # It's invoked like @retry
         return decorator(direct_fn)
     else:
-        # It's invoked like @retry(n_attempts=...)
         return decorator
 
 
 class TaskContext:
-    """Simple thing to make sure we don't have stray tasks.
-
-    Usage:
-    async with TaskContext() as task_context:
-        task = task_context.create(coro())
-    """
-
     _loops: Set[asyncio.Task]
 
     def __init__(self, grace: Optional[float] = None):
@@ -100,9 +71,8 @@ class TaskContext:
         self._loops = set()
 
     async def start(self):
-        # TODO: this only exists as a standalone method because Client doesn't have a proper ctx mgr
         self._tasks: set[asyncio.Task] = set()
-        self._exited: asyncio.Event = asyncio.Event()  # Used to stop infinite loops
+        self._exited: asyncio.Event = asyncio.Event()
 
     @property
     def exited(self) -> bool:
@@ -111,10 +81,9 @@ class TaskContext:
     async def __aenter__(self):
         await self.start()
         return self
-
     async def stop(self):
         self._exited.set()
-        await asyncio.sleep(0)  # Causes any just-created tasks to get started
+        await asyncio.sleep(0)
         unfinished_tasks = [t for t in self._tasks if not t.done()]
         gather_future = None
         try:
@@ -124,20 +93,14 @@ class TaskContext:
         except asyncio.TimeoutError:
             pass
         finally:
-            # asyncio.wait_for cancels the future, but the CancelledError
-            # still needs to be handled
-            # (https://stackoverflow.com/a/63356323/2475114)
             if gather_future:
                 try:
                     await gather_future
-                # pre Python3.8, CancelledErrors were a subclass of exception
                 except asyncio.CancelledError:
                     pass
 
             for task in self._tasks:
                 if task.done() and not task.cancelled():
-                    # Raise any exceptions if they happened.
-                    # Only tasks without a done_callback will still be present in self._tasks
                     task.result()
 
                 if task.done() or task in self._loops:
@@ -174,7 +137,6 @@ class TaskContext:
                 t0 = time.time()
                 try:
                     await asyncio.wait_for(async_f(), timeout=timeout)
-                    # pre Python3.8, CancelledErrors were a subclass of exception
                 except asyncio.CancelledError:
                     raise
                 except Exception:
@@ -184,7 +146,6 @@ class TaskContext:
                     await asyncio.wait_for(self._exited.wait(), timeout=sleep)
                 except asyncio.TimeoutError:
                     continue
-                # Only reached if self._exited got set.
                 logger.debug(f"Exiting infinite loop for {function_name}")
                 break
 
@@ -195,11 +156,6 @@ class TaskContext:
         return t
 
     async def wait(self, *tasks):
-        # Waits until all of tasks have finished
-        # This is slightly different than asyncio.wait since the `tasks` argument
-        # may be a subset of all the tasks.
-        # If any of the task context's task raises, throw that exception
-        # This is probably O(n^2) sadly but I guess it's fine
         unfinished_tasks = set(tasks)
         while True:
             unfinished_tasks &= self._tasks
@@ -212,7 +168,7 @@ class TaskContext:
             except asyncio.TimeoutError:
                 continue
             for task in done:
-                task.result()  # Raise exception if needed
+                task.result()
                 if task in unfinished_tasks:
                     unfinished_tasks.remove(task)
                 if task in self._tasks:
@@ -220,21 +176,12 @@ class TaskContext:
 
 
 def run_coro_blocking(coro):
-    """Fairly hacky thing that's needed in some extreme cases.
-
-    It's basically works like asyncio.run but unlike asyncio.run it also works
-    with in the case an event loop is already running. It does this by basically
-    moving the whole thing to a separate thread.
-    """
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         fut = executor.submit(asyncio.run, coro)
         return fut.result()
 
 
 async def queue_batch_iterator(q: asyncio.Queue, max_batch_size=100, debounce_time=0.015):
-    """
-    Read from a queue but return lists of items when queue is large
-    """
     item_list: List[Any] = []
 
     while True:
@@ -288,7 +235,6 @@ synchronize_api(_WarnIfGeneratorIsNotConsumed)
 
 
 def warn_if_generator_is_not_consumed(gen_f):
-    # https://gist.github.com/erikbern/01ae78d15f89edfa7f77e5c0a827a94d
     @functools.wraps(gen_f)
     def f_wrapped(*args, **kwargs):
         gen = gen_f(*args, **kwargs)
@@ -301,10 +247,9 @@ _shutdown_tasks = []
 
 
 def on_shutdown(coro):
-    # hook into event loop shutdown when all active tasks get cancelled
     async def wrapper():
         try:
-            await asyncio.sleep(1e10)  # never awake except for exceptions
+            await asyncio.sleep(1e10)
         finally:
             await coro
             raise
@@ -317,8 +262,6 @@ P = ParamSpec("P")
 
 
 def asyncify(f: Callable[P, T]) -> Callable[P, typing.Coroutine[None, None, T]]:
-    """Convert a blocking function into one that runs in the current loop's executor."""
-
     @functools.wraps(f)
     async def wrapper(*args: P.args, **kwargs: P.kwargs):
         loop = asyncio.get_running_loop()
@@ -328,8 +271,6 @@ def asyncify(f: Callable[P, T]) -> Callable[P, typing.Coroutine[None, None, T]]:
 
 
 async def iterate_blocking(iterator: Iterator[T]) -> AsyncGenerator[T, None]:
-    """Iterate over a blocking iterator in an async context."""
-
     loop = asyncio.get_running_loop()
     DONE = object()
     while True:
@@ -345,12 +286,10 @@ class ConcurrencyPool:
 
     async def run_coros(self, coros: typing.Iterable[typing.Coroutine], return_exceptions=False):
         async def blocking_wrapper(coro):
-            # Not using async with on the semaphore is intentional here - if return_exceptions=False
-            # manual release prevents starting extraneous tasks after exceptions.
             try:
                 await self.semaphore.acquire()
             except asyncio.CancelledError:
-                coro.close()  # avoid "coroutine was never awaited" warnings
+                coro.close()
 
             try:
                 res = await coro
@@ -361,8 +300,6 @@ class ConcurrencyPool:
                     self.semaphore.release()
                 raise e
 
-        # asyncio.gather() is weird - it doesn't cancel outstanding awaitables on exceptions when
-        # return_exceptions=False --> wrap the coros in tasks are cancel them explicitly on exception.
         tasks = [asyncio.create_task(blocking_wrapper(coro)) for coro in coros]
         g = asyncio.gather(*tasks, return_exceptions=return_exceptions)
         try:
@@ -372,15 +309,6 @@ class ConcurrencyPool:
                 t.cancel()
             raise e
 
-
 @asynccontextmanager
 async def asyncnullcontext(*args, **kwargs):
-    """Async noop context manager.
-
-    Note that for Python 3.10+ you can use contextlib.nullcontext() instead.
-
-    Usage:
-    async with asyncnullcontext():
-        pass
-    """
     yield

@@ -1258,31 +1258,40 @@ async def servicer_factory(blob_server):
 
         async def _start_servicer():
             nonlocal server
-            logging.info("Starting servicer...")
-            server = grpclib.server.Server([servicer])
-            await server.start(host=host, port=port, path=path)
-            logging.info("Servicer started and listening.")
-            logging.info(f"Event loop running: {asyncio.get_running_loop().is_running()}")
-            logging.info(f"Active tasks at start: {[task.get_name() for task in asyncio.all_tasks()]}")
+            logging.info("Attempting to start servicer...")
+            try:
+                server = grpclib.server.Server([servicer])
+                await server.start(host=host, port=port, path=path)
+                logging.info(f"Servicer started on host {host}, port {port}.")
+            except Exception as e:
+                logging.error(f"Failed to start servicer: {e}")
+            else:
+                logging.info("Servicer started and listening.")
+                logging.info(f"Event loop running: {asyncio.get_running_loop().is_running()}")
+                logging.info(f"Active tasks at start: {[task.get_name() for task in asyncio.all_tasks()]}")
 
         async def _stop_servicer():
-            logging.info("Stopping servicer...")
+            logging.info("Initiating servicer shutdown...")
             logging.info(f"Event loop running before stopping: {asyncio.get_running_loop().is_running()}")
             servicer.container_heartbeat_abort.set()
             # Log active tasks before cancellation
             tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
             logging.info(f"Active tasks before cancellation: {len(tasks)}")
             for task in tasks:
-                logging.info(f"Cancelling task: {task.get_name()}")
+                logging.info(f"Cancelling task: {task.get_name()}, ID: {id(task)}")
                 task.cancel()
             # Await all tasks to ensure they are cancelled before closing the server
             await asyncio.gather(*tasks, return_exceptions=True)
+            logging.info("Tasks after cancellation attempt:")
+            for task in tasks:
+                logging.info(f"Task {task.get_name()} ID: {id(task)} cancelled: {task.cancelled()}, done: {task.done()}, exception: {task.exception() if task.done() else 'N/A'}")
             if server:
-                server.close()
-                await server.wait_closed()
-            # Confirm server closure
-            logging.info("Server closed successfully.")
-            logging.info("Servicer stopped.")
+                try:
+                    await server.wait_closed()
+                    logging.info("Server closed successfully.")
+                except Exception as e:
+                    logging.error(f"Failed to close server: {e}")
+            logging.info("Servicer shutdown complete.")
             logging.info(f"Event loop running after stopping: {asyncio.get_running_loop().is_running()}")
             remaining_tasks = [task for task in asyncio.all_tasks() if not task.done()]
             if remaining_tasks:
@@ -1290,10 +1299,22 @@ async def servicer_factory(blob_server):
                 # Await remaining tasks to ensure they are completed or cancelled
                 await asyncio.gather(*remaining_tasks, return_exceptions=True)
             logging.info("All tasks completed or cancelled successfully.")
-            # Ensure the synchronizer's event loop is properly closed
+            # Delay closing the synchronizer's event loop until after pytest_asyncio's event loop is done
             if hasattr(synchronizer, 'close'):
-                logging.info("Closing synchronizer's event loop.")
-                synchronizer.close()
+                # Schedule the synchronizer's event loop to close after a slight delay
+                def close_synchronizer_loop():
+                    logging.info("Closing synchronizer's event loop.")
+                    synchronizer.close()
+                    logging.info("Synchronizer's event loop closed.")
+                # Increase delay to 1 second to ensure all tasks have time to complete or be cancelled
+                asyncio.get_running_loop().call_later(1, close_synchronizer_loop)
+            logging.info("Final event loop state after all operations:")
+            logging.info(f"Event loop running: {asyncio.get_running_loop().is_running()}")
+            final_tasks = [task for task in asyncio.all_tasks() if not task.done()]
+            if final_tasks:
+                logging.info(f"Final remaining active tasks: {[task.get_name() for task in final_tasks]}")
+            else:
+                logging.info("No remaining active tasks.")
 
         start_servicer = synchronize_api(_start_servicer)
         stop_servicer = synchronize_api(_stop_servicer)

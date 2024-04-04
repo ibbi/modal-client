@@ -94,6 +94,12 @@ class _Obj:
         return self._local_obj
 
     def enter(self):
+        """
+        Enter the context for the local object if it has not already been entered.
+        This method is designed to be used as a decorator that can be called without
+        parentheses if the first argument is a function, enhancing the developer experience
+        by allowing a more flexible invocation.
+        """
         if not self._entered:
             if hasattr(self._local_obj, "__enter__"):
                 self._local_obj.__enter__()

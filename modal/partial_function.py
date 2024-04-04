@@ -488,6 +488,7 @@ def _enter(
         flag = _PartialFunctionFlags.ENTER_PRE_CHECKPOINT if snap else _PartialFunctionFlags.ENTER_POST_CHECKPOINT
         return _PartialFunction(f, flag)
     elif f is not None:
+        # The function will raise an InvalidError if f is not callable, but we want to print debug information first
         print("Debug: Raising InvalidError because f is not callable")  # New print statement before raising error
         raise InvalidError("The @enter decorator must be called with a function or without arguments.")
     else:
